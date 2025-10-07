@@ -9,13 +9,14 @@
   <body>
     <div id="app">
       <header class="app-header">
-        <div class="title">Course Player</div>
+        <div class="title">Course Player <span id="courseName" class="course-name"></span></div>
         <div class="totals">
           <span id="totalVideos">0</span> videos • <span id="totalDuration">00:00:00</span> • Watched <span id="watchedDuration">00:00</span> • Left <span id="leftDuration">00:00</span>
         </div>
       </header>
       <main class="layout">
         <section class="player">
+          <div id="videoTitle" class="video-title"></div>
           <video id="video" controls playsinline></video>
         </section>
         <aside class="sidebar">

@@ -156,6 +156,8 @@ function renderContentsForCourse(courseNode) {
   const totalDuration = courseNode.durationSec ?? courseNode.totals?.totalDurationSec ?? 0;
   document.getElementById('totalVideos').textContent = String(totalVideos || 0);
   document.getElementById('totalDuration').textContent = formatDuration(totalDuration || 0);
+  const courseNameEl = document.getElementById('courseName');
+  if (courseNameEl) courseNameEl.textContent = courseNode?.title || '';
   updateProgressBadges();
   // Update watched/left aggregates for selected course
   const cp = computeCourseProgress(courseNode);
@@ -265,6 +267,11 @@ async function selectAndPlay(id) {
   video.src = `/video/${encodeURIComponent(id)}`;
   await video.play().catch(() => {});
   highlightSelection();
+  // Update video title
+  const courseNode = getSelectedCourseNode();
+  const fileNode = courseNode ? findNodeById(courseNode, id) : null;
+  const vt = document.getElementById('videoTitle');
+  if (vt) vt.textContent = fileNode?.title || '';
 }
 
 function highlightSelection() {
@@ -309,6 +316,22 @@ async function main() {
   state.tree = await fetchTree();
   const selectedCourse = populateCourseSelect(state.tree);
   await autoSelectInitial(selectedCourse);
+}
+
+function getSelectedCourseNode() {
+  if (!state.tree) return null;
+  const courses = getTopLevelCourses(state.tree);
+  return courses.find(c => c.id === state.selectedCourseId) || courses[0] || null;
+}
+
+function findNodeById(node, id) {
+  if (!node) return null;
+  if (node.id === id) return node;
+  for (const ch of node.children || []) {
+    const found = findNodeById(ch, id);
+    if (found) return found;
+  }
+  return null;
 }
 
 main().catch(err => {

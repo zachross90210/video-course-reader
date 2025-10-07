@@ -1,0 +1,4 @@
+.env
+node_modules
+.duration-cache.json
+.progress.json

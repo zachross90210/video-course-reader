@@ -292,6 +292,57 @@ app.get('/video/:id', async (req, res) => {
   }
 });
 
+// Subtitles endpoint: serves .vtt next to the video file with the same basename
+app.get('/subtitle/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const videoAbsPath = decodeId(id);
+    if (!videoAbsPath || !videoAbsPath.startsWith(COURSE_DIR)) {
+      return res.status(404).end();
+    }
+    const dir = path.dirname(videoAbsPath);
+    const base = path.basename(videoAbsPath, path.extname(videoAbsPath));
+    const vttPath = path.join(dir, `${base}.vtt`);
+    try {
+      const stat = await fsPromises.stat(vttPath);
+      if (!stat.isFile()) return res.status(404).end();
+    } catch (_e) {
+      return res.status(404).end();
+    }
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    const stream = fs.createReadStream(vttPath);
+    stream.pipe(res);
+    stream.on('error', () => res.end());
+  } catch (_err) {
+    res.status(500).end();
+  }
+});
+
+// HEAD for subtitle existence check
+app.head('/subtitle/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const videoAbsPath = decodeId(id);
+    if (!videoAbsPath || !videoAbsPath.startsWith(COURSE_DIR)) {
+      return res.status(404).end();
+    }
+    const dir = path.dirname(videoAbsPath);
+    const base = path.basename(videoAbsPath, path.extname(videoAbsPath));
+    const vttPath = path.join(dir, `${base}.vtt`);
+    try {
+      const stat = await fsPromises.stat(vttPath);
+      if (!stat.isFile()) return res.status(404).end();
+    } catch (_e) {
+      return res.status(404).end();
+    }
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    return res.status(200).end();
+  } catch (_err) {
+    res.status(500).end();
+  }
+});
+
 // Fallback to index.html
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

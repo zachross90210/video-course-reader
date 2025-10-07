@@ -265,6 +265,7 @@ async function selectAndPlay(id) {
   setLastPlayed(id);
   const video = document.getElementById('video');
   video.src = `/video/${encodeURIComponent(id)}`;
+  await maybeAttachSubtitleTrack(id);
   await video.play().catch(() => {});
   highlightSelection();
   // Update video title
@@ -311,11 +312,32 @@ async function main() {
     }
   });
 
+  // no separate checkbox; rely on native captions toggle in the player
+
   // Load saved progress before rendering so checkboxes and badges reflect it
   await loadProgressFromServer().catch(() => {});
   state.tree = await fetchTree();
   const selectedCourse = populateCourseSelect(state.tree);
   await autoSelectInitial(selectedCourse);
+}
+
+async function maybeAttachSubtitleTrack(id) {
+  const video = document.getElementById('video');
+  // Remove existing tracks first
+  const tracks = Array.from(video.querySelectorAll('track'));
+  for (const t of tracks) t.remove();
+  try {
+    const res = await fetch(`/subtitle/${encodeURIComponent(id)}`, { method: 'HEAD' });
+    if (!res.ok) return; // no subs
+    const track = document.createElement('track');
+    track.kind = 'subtitles';
+    track.label = 'Subtitles';
+    track.srclang = 'en';
+    track.src = `/subtitle/${encodeURIComponent(id)}`;
+    track.default = true;
+    video.appendChild(track);
+    // Let the user toggle via the player's native captions menu
+  } catch (_e) {}
 }
 
 function getSelectedCourseNode() {

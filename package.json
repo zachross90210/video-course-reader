@@ -1,17 +1,44 @@
 {
-  "name": "video course reader",
+  "name": "video-course-reader",
   "version": "0.1.0",
+  "description": "A minimal in-browser video player for local course directories with recursive folder scanning, progress tracking, and subtitle support",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.js",
     "dev": "NODE_ENV=development node server.js"
   },
+  "keywords": [
+    "video-player",
+    "course-viewer",
+    "video-streaming",
+    "subtitle-support",
+    "progress-tracking",
+    "local-server",
+    "udemy",
+    "course player"
+  ],
+  "author": {
+    "name": "zachross90210",
+    "url": "https://github.com/zachross90210"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ross/video-course-reader"
+  },
+  "bugs": {
+    "url": "https://github.com/ross/video-course-reader/issues"
+  },
+  "homepage": "https://github.com/ross/video-course-reader#readme",
+  "license": "MIT",
   "dependencies": {
     "dotenv": "^17.2.3",
     "execa": "^9.3.0",
     "express": "^4.19.2",
     "ffprobe-static": "^3.1.0",
     "mime": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

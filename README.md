@@ -2,6 +2,8 @@
 
 A minimal in-browser video player that scans a course directory, orders items numerically (e.g. `1...`, `2...`), supports nested folders as groups, streams videos with HTTP range requests, shows per-item and per-group durations, and tracks completed videos (checkbox history stored in `localStorage`).
 
+![Course Player Screenshot](player.png)
+
 ## Features
 - Numeric ordering across files and folders: `1 Intro.mp4`, `2 Setup/`, `3 Advanced/`...
 - Recursive scan with groups (folders) and videos (files)

@@ -1,4 +1,11 @@
+# Environment variables file containing local configuration
 .env
+
+# Node.js dependencies directory
 node_modules
+
+# Cache file for video duration information (regenerated on first scan)
 .duration-cache.json
+
+# User progress data (completed videos and last played position)
 .progress.json

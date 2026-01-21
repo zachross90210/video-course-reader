@@ -9,3 +9,7 @@ node_modules
 
 # User progress data (completed videos and last played position)
 .progress.json
+
+# Docker data directory (contains cache and progress files)
+data/
+logs/*

@@ -2,8 +2,10 @@ const state = {
   tree: null,
   selectedId: null,
   completed: {},
+  playbackPositions: {},
   progressLoaded: false,
-  selectedCourseId: null
+  selectedCourseId: null,
+  savePositionTimer: null
 };
 
 async function loadProgressFromServer() {
@@ -11,19 +13,21 @@ async function loadProgressFromServer() {
   if (!res.ok) throw new Error('Failed to load progress');
   const data = await res.json();
   state.completed = data.completed || {};
+  state.playbackPositions = data.playbackPositions || {};
   state.progressLoaded = true;
   return data;
 }
 
-async function saveProgressToServer({ setCompleted = [], unsetCompleted = [], lastPlayedId = undefined }) {
+async function saveProgressToServer({ setCompleted = [], unsetCompleted = [], lastPlayedId = undefined, playbackPositions = undefined }) {
   const res = await fetch('/api/progress', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ setCompleted, unsetCompleted, lastPlayedId })
+    body: JSON.stringify({ setCompleted, unsetCompleted, lastPlayedId, playbackPositions })
   });
   if (!res.ok) throw new Error('Failed to save progress');
   const data = await res.json();
   state.completed = data.completed || state.completed;
+  state.playbackPositions = data.playbackPositions || state.playbackPositions;
   return data;
 }
 
@@ -67,6 +71,8 @@ function buildItemRow(item, depth) {
     checkbox.addEventListener('change', async () => {
       if (checkbox.checked) {
         state.completed[item.id] = true;
+        // Clear playback position when marked as watched
+        delete state.playbackPositions[item.id];
         await saveProgressToServer({ setCompleted: [item.id] }).catch(() => {});
       } else {
         delete state.completed[item.id];
@@ -261,11 +267,42 @@ function parseDuration(text) {
 }
 
 async function selectAndPlay(id) {
+  // Stop saving position for previous video
+  if (state.savePositionTimer) {
+    clearInterval(state.savePositionTimer);
+    state.savePositionTimer = null;
+  }
+  
+  // Remove old event listeners
+  const video = document.getElementById('video');
+  const oldSaveOnChange = video._saveOnChange;
+  if (oldSaveOnChange) {
+    video.removeEventListener('pause', oldSaveOnChange);
+    video.removeEventListener('seeked', oldSaveOnChange);
+    video._saveOnChange = null;
+  }
+  
   state.selectedId = id;
   setLastPlayed(id);
-  const video = document.getElementById('video');
+  
+  // Get saved position before loading new video
+  const savedPosition = state.playbackPositions[id];
+  
   video.src = `/video/${encodeURIComponent(id)}`;
   await maybeAttachSubtitleTrack(id);
+  
+  // Restore playback position after metadata is loaded
+  const restorePosition = () => {
+    if (savedPosition && typeof savedPosition === 'number' && savedPosition > 0) {
+      video.currentTime = savedPosition;
+    }
+  };
+  
+  video.addEventListener('loadedmetadata', restorePosition, { once: true });
+  
+  // Set up position saving for this video
+  setupPositionSaving(id, video);
+  
   await video.play().catch(() => {});
   highlightSelection();
   // Update video title
@@ -273,6 +310,66 @@ async function selectAndPlay(id) {
   const fileNode = courseNode ? findNodeById(courseNode, id) : null;
   const vt = document.getElementById('videoTitle');
   if (vt) vt.textContent = fileNode?.title || '';
+}
+
+function setupPositionSaving(videoId, videoElement) {
+  // Clear any existing timer
+  if (state.savePositionTimer) {
+    clearInterval(state.savePositionTimer);
+  }
+  
+  let lastSavedTime = 0;
+  let lastServerSaveTime = 0;
+  const SERVER_SAVE_INTERVAL = 15000; // Save to server every 15 seconds
+  
+  // Update position in memory every 5 seconds
+  state.savePositionTimer = setInterval(() => {
+    if (videoElement && !videoElement.paused && videoElement.currentTime > 0) {
+      const currentTime = Math.floor(videoElement.currentTime);
+      // Only save if position is meaningful (more than 5 seconds) and changed
+      if (currentTime > 5 && currentTime !== lastSavedTime) {
+        state.playbackPositions[videoId] = currentTime;
+        lastSavedTime = currentTime;
+        
+        // Save to server every 15 seconds to reduce load
+        const now = Date.now();
+        if (now - lastServerSaveTime >= SERVER_SAVE_INTERVAL) {
+          lastServerSaveTime = now;
+          saveProgressToServer({ playbackPositions: { [videoId]: currentTime } }).catch(() => {});
+        }
+      }
+    }
+  }, 5000);
+  
+  // Also save on pause/seek (immediate save to server)
+  const saveOnChange = () => {
+    if (videoElement && videoElement.currentTime > 5) {
+      const currentTime = Math.floor(videoElement.currentTime);
+      state.playbackPositions[videoId] = currentTime;
+      lastSavedTime = currentTime;
+      lastServerSaveTime = Date.now();
+      saveProgressToServer({ playbackPositions: { [videoId]: currentTime } }).catch(() => {});
+    }
+  };
+  
+  videoElement.addEventListener('pause', saveOnChange);
+  videoElement.addEventListener('seeked', saveOnChange);
+  videoElement._saveOnChange = saveOnChange; // Store reference for cleanup
+  
+  // Clean up on video end
+  const cleanup = () => {
+    if (state.savePositionTimer) {
+      clearInterval(state.savePositionTimer);
+      state.savePositionTimer = null;
+    }
+    if (videoElement._saveOnChange) {
+      videoElement.removeEventListener('pause', videoElement._saveOnChange);
+      videoElement.removeEventListener('seeked', videoElement._saveOnChange);
+      videoElement._saveOnChange = null;
+    }
+  };
+  
+  videoElement.addEventListener('ended', cleanup, { once: true });
 }
 
 function highlightSelection() {
@@ -298,6 +395,8 @@ async function main() {
   video.addEventListener('ended', async () => {
     if (state.selectedId) {
       state.completed[state.selectedId] = true;
+      // Clear playback position when video ends (marked as completed)
+      delete state.playbackPositions[state.selectedId];
       await saveProgressToServer({ setCompleted: [state.selectedId], lastPlayedId: state.selectedId }).catch(() => {});
       // update checkbox if exists
       const row = document.querySelector(`.row[data-id="${state.selectedId}"] input.complete-box`);

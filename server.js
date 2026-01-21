@@ -200,15 +200,23 @@ async function loadProgress() {
   try {
     const raw = await fsPromises.readFile(PROGRESS_FILE, 'utf8');
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return { completed: {}, lastPlayedId: null };
-    return { completed: parsed.completed || {}, lastPlayedId: parsed.lastPlayedId || null };
+    if (!parsed || typeof parsed !== 'object') return { completed: {}, lastPlayedId: null, playbackPositions: {} };
+    return { 
+      completed: parsed.completed || {}, 
+      lastPlayedId: parsed.lastPlayedId || null,
+      playbackPositions: parsed.playbackPositions || {}
+    };
   } catch (_e) {
-    return { completed: {}, lastPlayedId: null };
+    return { completed: {}, lastPlayedId: null, playbackPositions: {} };
   }
 }
 
 async function saveProgress(next) {
-  const data = { completed: next.completed || {}, lastPlayedId: next.lastPlayedId || null };
+  const data = { 
+    completed: next.completed || {}, 
+    lastPlayedId: next.lastPlayedId || null,
+    playbackPositions: next.playbackPositions || {}
+  };
   await fsPromises.writeFile(PROGRESS_FILE, JSON.stringify(data, null, 2), 'utf8');
   return data;
 }
@@ -224,12 +232,18 @@ app.get('/api/progress', async (_req, res) => {
 
 app.post('/api/progress', async (req, res) => {
   try {
-    const { setCompleted, unsetCompleted, lastPlayedId } = req.body || {};
+    const { setCompleted, unsetCompleted, lastPlayedId, playbackPositions } = req.body || {};
     const current = await loadProgress();
     const completed = { ...(current.completed || {}) };
+    const positions = { ...(current.playbackPositions || {}) };
+    
     if (Array.isArray(setCompleted)) {
       for (const id of setCompleted) {
-        if (typeof id === 'string' && id) completed[id] = true;
+        if (typeof id === 'string' && id) {
+          completed[id] = true;
+          // Clear playback position when marked as watched
+          delete positions[id];
+        }
       }
     }
     if (Array.isArray(unsetCompleted)) {
@@ -237,7 +251,23 @@ app.post('/api/progress', async (req, res) => {
         if (typeof id === 'string' && id) delete completed[id];
       }
     }
-    const next = { completed, lastPlayedId: typeof lastPlayedId === 'string' ? lastPlayedId : current.lastPlayedId || null };
+    
+    // Update playback positions (can be partial update)
+    if (playbackPositions && typeof playbackPositions === 'object') {
+      Object.assign(positions, playbackPositions);
+      // Remove positions for completed videos
+      for (const id of Object.keys(positions)) {
+        if (completed[id]) {
+          delete positions[id];
+        }
+      }
+    }
+    
+    const next = { 
+      completed, 
+      lastPlayedId: typeof lastPlayedId === 'string' ? lastPlayedId : current.lastPlayedId || null,
+      playbackPositions: positions
+    };
     const saved = await saveProgress(next);
     res.json(saved);
   } catch (e) {

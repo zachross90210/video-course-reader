@@ -1,12 +1,25 @@
 #!/bin/bash
 
-# Load .env if it exists
+# Load .env for pre-flight validation (docker compose reads .env on its own)
 if [ -f .env ]; then
-  export $(cat .env | grep -v '^#' | xargs)
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
 fi
 
 # Create data directory and cache files if they don't exist
 mkdir -p data
+if [ ! -w data ] && command -v sudo >/dev/null 2>&1; then
+  sudo chown "$(id -u):$(id -g)" data 2>/dev/null || true
+fi
+
+# Docker creates directories when bind-mount targets are missing; replace with files
+for f in data/.duration-cache.json data/.progress.json; do
+  if [ -d "$f" ]; then
+    rm -rf "$f" 2>/dev/null || sudo rm -rf "$f" 2>/dev/null || true
+  fi
+done
 
 # Create empty JSON files if they don't exist (Docker needs them to exist as files, not directories)
 [ ! -f data/.duration-cache.json ] && echo '{}' > data/.duration-cache.json
@@ -30,23 +43,25 @@ if [ -z "$(ls -A "$COURSE_DIR" 2>/dev/null)" ]; then
   fi
 fi
 
-# Rebuild and start docker-compose
+# Rebuild and start docker compose
 echo "Rebuilding and starting Docker containers..."
-docker-compose down
-docker-compose up -d --build
+# Avoid shell env overriding docker compose's .env interpolation
+unset COURSE_DIR PORT NODE_ENV 2>/dev/null || true
+docker compose down
+docker compose up -d --build
 
 # Wait a moment and check if containers are running
 sleep 2
-if docker-compose ps | grep -q "Up"; then
+if docker compose ps | grep -q "Up"; then
   echo ""
   echo "✓ Services started successfully!"
   echo "Access the application at http://localhost${PORT:+:${PORT:-80}}"
   echo ""
-  echo "View logs with: docker-compose logs -f"
-  echo "Check status with: docker-compose ps"
+  echo "View logs with: docker compose logs -f"
+  echo "Check status with: docker compose ps"
 else
   echo ""
   echo "⚠ Some containers may have failed to start."
-  echo "Check logs with: docker-compose logs"
+  echo "Check logs with: docker compose logs"
   exit 1
 fi

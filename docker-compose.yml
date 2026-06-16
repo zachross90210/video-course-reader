@@ -14,7 +14,7 @@ services:
       # Mount your course directory from host to container
       # Configure the HOST path in .env file: COURSE_DIR=/home/ross/Videos/...
       # This will mount your host directory to /app/courses inside the container
-      - ${COURSE_DIR:-./courses}:/app/courses:ro
+      - "${COURSE_DIR:-./courses}:/app/courses:ro"
       # Persist cache and progress files (server writes to /app/.duration-cache.json and /app/.progress.json)
       - ./data/.duration-cache.json:/app/.duration-cache.json
       - ./data/.progress.json:/app/.progress.json

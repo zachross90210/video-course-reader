@@ -5,7 +5,7 @@ if (Test-Path .env) {
     Get-Content .env | ForEach-Object {
         if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
             $name = $matches[1].Trim()
-            $value = $matches[2].Trim()
+            $value = $matches[2].Trim().Trim('"').Trim("'")
             Set-Variable -Name $name -Value $value -Scope Script
         }
     }
@@ -14,6 +14,13 @@ if (Test-Path .env) {
 # Create data directory and cache files if they don't exist
 if (-not (Test-Path data)) {
     New-Item -ItemType Directory -Path data | Out-Null
+}
+
+# Docker creates directories when bind-mount targets are missing; replace with files
+foreach ($file in @('data\.duration-cache.json', 'data\.progress.json')) {
+    if (Test-Path $file -PathType Container) {
+        Remove-Item -Recurse -Force $file
+    }
 }
 
 # Create empty JSON files if they don't exist
@@ -47,19 +54,19 @@ if ($null -eq $files -or $files.Count -eq 0) {
     }
 }
 
-# Rebuild and start docker-compose
+# Rebuild and start docker compose
 Write-Host "Rebuilding and starting Docker containers..." -ForegroundColor Cyan
-docker-compose down
-docker-compose up -d --build
+docker compose down
+docker compose up -d --build
 
 # Wait a moment and check if containers are running
 Start-Sleep -Seconds 2
-$running = docker-compose ps 2>&1 | Select-String -Pattern "Up"
+$running = docker compose ps 2>&1 | Select-String -Pattern "Up"
 
 if (-not $running) {
     Write-Host ""
     Write-Host "Some containers may have failed to start." -ForegroundColor Yellow
-    Write-Host "Check logs with: docker-compose logs"
+    Write-Host "Check logs with: docker compose logs"
     exit 1
 } else {
     Write-Host ""
@@ -70,6 +77,6 @@ if (-not $running) {
         Write-Host "Access the application at http://localhost"
     }
     Write-Host ""
-    Write-Host "View logs with: docker-compose logs -f"
-    Write-Host "Check status with: docker-compose ps"
+    Write-Host "View logs with: docker compose logs -f"
+    Write-Host "Check status with: docker compose ps"
 }

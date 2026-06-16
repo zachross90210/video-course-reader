@@ -92,10 +92,11 @@ function leadingNumberValue(name) {
   return parseInt(match[1], 10);
 }
 
-async function getVideoDurationSeconds(absPath, cache) {
+async function getVideoDurationSeconds(absPath, cache, { deferProbe = false } = {}) {
   if (cache[absPath] && typeof cache[absPath].durationSec === 'number') {
     return cache[absPath].durationSec;
   }
+  if (deferProbe) return 0;
   try {
     // Ask ffprobe for the container duration
     const { stdout } = await execa(ffprobe.path, [
@@ -115,7 +116,7 @@ async function getVideoDurationSeconds(absPath, cache) {
   }
 }
 
-async function scanDirectoryRecursive(dirAbs, cache) {
+async function scanDirectoryRecursive(dirAbs, cache, { deferProbe = false } = {}) {
   const entries = await fsPromises.readdir(dirAbs, { withFileTypes: true });
   // Sort using numeric prefixes, then by name
   entries.sort((a, b) => {
@@ -129,7 +130,7 @@ async function scanDirectoryRecursive(dirAbs, cache) {
   for (const entry of entries) {
     const abs = path.join(dirAbs, entry.name);
     if (entry.isDirectory()) {
-      const group = await scanDirectoryRecursive(abs, cache);
+      const group = await scanDirectoryRecursive(abs, cache, { deferProbe });
       if (group.children.length > 0) {
         children.push(group);
       }
@@ -138,7 +139,7 @@ async function scanDirectoryRecursive(dirAbs, cache) {
     if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
       if (!VIDEO_EXTENSIONS.has(ext)) continue;
-      const durationSec = await getVideoDurationSeconds(abs, cache);
+      const durationSec = await getVideoDurationSeconds(abs, cache, { deferProbe });
       children.push({
         id: encodeId(abs),
         type: 'file',
@@ -172,24 +173,58 @@ async function scanDirectoryRecursive(dirAbs, cache) {
   };
 }
 
-async function buildCourseTree() {
+async function buildCourseTree({ deferProbe = false } = {}) {
   assertCourseDirExists();
   const cache = await loadDurationCache();
-  const tree = await scanDirectoryRecursive(COURSE_DIR, cache);
-  await saveDurationCache(cache);
+  const tree = await scanDirectoryRecursive(COURSE_DIR, cache, { deferProbe });
+  if (!deferProbe) {
+    await saveDurationCache(cache);
+  }
   // Attach totals on root
   const totals = {
     totalDurationSec: tree.durationSec || 0,
     numVideos: tree.videosCount || 0
   };
-  return { ...tree, totals };
+  return { ...tree, totals, cache };
+}
+
+let durationProbeRunning = false;
+
+async function probeUncachedDurations(dirAbs, cache) {
+  const entries = await fsPromises.readdir(dirAbs, { withFileTypes: true });
+  for (const entry of entries) {
+    const abs = path.join(dirAbs, entry.name);
+    if (entry.isDirectory()) {
+      await probeUncachedDurations(abs, cache);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name).toLowerCase();
+    if (!VIDEO_EXTENSIONS.has(ext)) continue;
+    if (cache[abs] && typeof cache[abs].durationSec === 'number') continue;
+    await getVideoDurationSeconds(abs, cache);
+  }
+}
+
+async function startBackgroundDurationProbe(cache) {
+  if (durationProbeRunning) return;
+  durationProbeRunning = true;
+  try {
+    await probeUncachedDurations(COURSE_DIR, cache);
+    await saveDurationCache(cache);
+  } catch (err) {
+    console.warn('Background duration probing failed:', err);
+  } finally {
+    durationProbeRunning = false;
+  }
 }
 
 // API to return tree
 app.get('/api/course', async (_req, res) => {
   try {
-    const tree = await buildCourseTree();
+    const { cache, ...tree } = await buildCourseTree({ deferProbe: true });
     res.json(tree);
+    startBackgroundDurationProbe(cache).catch(() => {});
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });
   }
